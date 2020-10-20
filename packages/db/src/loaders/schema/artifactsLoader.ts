@@ -8,6 +8,7 @@ import Config from "@truffle/config";
 import { Environment } from "@truffle/environment";
 import Web3 from "web3";
 
+import { Project } from "@truffle/db/loaders";
 import { GetCompilation } from "@truffle/db/loaders/resources/compilations";
 import { AddContractInstances } from "@truffle/db/loaders/resources/contractInstances";
 import { AddNameRecords } from "@truffle/db/loaders/resources/nameRecords";
@@ -89,13 +90,20 @@ export class ArtifactsLoader {
       this.config
     );
 
-    const project = await this.db.loadProject();
+    const project = await Project.initialize({
+      project: {
+        directory: this.config.working_directory
+      },
+      db: this.db
+    });
 
     // third parameter in loadCompilation is for whether or not we need
     // to update nameRecords (i.e. is this happening in test)
-    const { compilations } = await this.db.loadCompilations(result, {
-      names: true
+    const { compilations, contracts } = await project.loadCompilations({
+      result
     });
+
+    await project.loadNames({ assignments: { contracts } });
 
     //map contracts and contract instances to compiler
     await Promise.all(

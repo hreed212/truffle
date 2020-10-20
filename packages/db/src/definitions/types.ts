@@ -61,6 +61,8 @@ export type Resource<N extends CollectionName = CollectionName> = Meta.Resource<
   N
 >;
 
+export type NamedCollectionName = Meta.NamedCollectionName<Collections>;
+
 export type MutableResource<
   N extends CollectionName = CollectionName
 > = Meta.MutableResource<Collections, N>;
