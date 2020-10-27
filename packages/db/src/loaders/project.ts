@@ -1,7 +1,7 @@
-import { DocumentNode } from "graphql";
-import { WorkflowCompileResult } from "@truffle/compile-common";
+import {DocumentNode} from "graphql";
+import {WorkflowCompileResult} from "@truffle/compile-common";
 
-import { toIdObject, IdObject } from "@truffle/db/meta";
+import {toIdObject, IdObject} from "@truffle/db/meta";
 
 import {
   generateCompileLoad,
@@ -9,7 +9,7 @@ import {
   generateNamesLoad
 } from "./commands";
 
-import { LoaderRunner, forDb } from "./run";
+import {LoaderRunner, forDb} from "./run";
 
 interface ITruffleDB {
   query: (query: DocumentNode | string, variables: any) => Promise<any>;
@@ -25,13 +25,13 @@ export class Project {
   private project: IdObject<DataModel.Project>;
 
   static async initialize(options: InitializeOptions): Promise<Project> {
-    const { db, project: input } = options;
+    const {db, project: input} = options;
 
     const run = forDb(db);
 
     const project = await run(generateInitializeLoad, input);
 
-    return new Project({ run, project });
+    return new Project({run, project});
   }
 
   async loadCompilations(options: {
@@ -40,9 +40,9 @@ export class Project {
     compilations: IdObject<DataModel.Compilation>[];
     contracts: IdObject<DataModel.Contract>[];
   }> {
-    const { result } = options;
+    const {result} = options;
 
-    const { compilations, contracts } = await this.run(
+    const {compilations, contracts} = await this.run(
       generateCompileLoad,
       result
     );
@@ -57,8 +57,17 @@ export class Project {
     assignments: Partial<{
       [collectionName: string]: IdObject[];
     }>;
-  }) {
-    return await this.run(generateNamesLoad, this.project, options.assignments);
+  }): Promise<{
+    nameRecords: IdObject<DataModel.NameRecord>[];
+  }> {
+    const nameRecords = await this.run(
+      generateNamesLoad,
+      this.project,
+      options.assignments
+    );
+    return {
+      nameRecords: nameRecords.map(toIdObject)
+    };
   }
 
   private constructor(options: {
