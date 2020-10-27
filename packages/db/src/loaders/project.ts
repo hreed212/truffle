@@ -34,10 +34,6 @@ export class Project {
     return new Project({ run, project });
   }
 
-  get id() {
-    return this.project.id;
-  }
-
   async loadCompilations(options: {
     result: WorkflowCompileResult;
   }): Promise<{
