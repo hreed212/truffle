@@ -2,7 +2,7 @@ import { logger } from "@truffle/db/logger";
 const debug = logger("db:loaders:schema:artifactsLoader");
 
 import { TruffleDB } from "@truffle/db/db";
-import { toIdObject } from "@truffle/db/meta";
+import { IdObject, toIdObject } from "@truffle/db/meta";
 import * as fse from "fs-extra";
 import path from "path";
 import Config from "@truffle/config";
@@ -14,6 +14,7 @@ import Web3 from "web3";
 
 import { Project } from "@truffle/db/loaders";
 import { GetCompilation } from "@truffle/db/loaders/resources/compilations";
+import { FindContracts } from "@truffle/db/loaders/resources/contracts";
 import { AddContractInstances } from "@truffle/db/loaders/resources/contractInstances";
 import { AddNetworks } from "@truffle/db/loaders/resources/networks";
 import {
@@ -29,7 +30,6 @@ type LoaderNetworkObject = {
 
 type LoaderContractObject = {
   contract: DataModel.Contract;
-  compiledContract: CompiledContract;
   artifact: ContractObject;
 }
 
@@ -59,52 +59,53 @@ export class ArtifactsLoader {
 
     // third parameter in loadCompilation is for whether or not we need
     // to update nameRecords (i.e. is this happening in test)
-    const { compilations, contracts } = await project.loadCompilations({
+    const { contracts } = await project.loadCompilations({
       result
     });
 
     await project.loadNames({ assignments: { contracts } });
 
-    //map contracts and contract instances to compiler
-    await Promise.all(
-      compilations.map(async ({ id }, index) => {
-        const {
-          data: {
-            compilation
-          }
-        } = await this.db.query(GetCompilation, { id });
+    const loaderContractObjects = await this.pairContractsWithArtifacts(contracts);
 
-        const loaderContractObjects = result.compilations[index].contracts
-          .map((compiledContract: CompiledContract) => {
-            const { contractName } = compiledContract;
-
-            const contract: DataModel.Contract = compilation.contracts.find(
-              ({ name }) => name === contractName
-            );
-
-            // @ts-ignore
-            const artifact = this.resolver.require(contractName);
-
-            return { contract, compiledContract, artifact };
-          });
-
-        const loaderNetworkObjects = await this.loadNetworks(
-          loaderContractObjects,
-          this.config["contracts_directory"]
-        );
-
-        // assign names for networks we just added
-        const networks = [
-          ...new Set(loaderNetworkObjects.map(({ network: { id } }) => id))
-        ].map(id => ({ id }));
-
-        await project.loadNames({ assignments: { networks } });
-
-        if (loaderNetworkObjects.length) {
-          await this.loadContractInstances(loaderNetworkObjects);
-        }
-      })
+    const loaderNetworkObjects = await this.loadNetworks(
+      loaderContractObjects,
+      this.config["contracts_directory"]
     );
+
+    // assign names for networks we just added
+    const networks = [
+      ...new Set(loaderNetworkObjects.map(({ network: { id } }) => id))
+    ].map(id => ({ id }));
+
+    await project.loadNames({ assignments: { networks } });
+
+    if (loaderNetworkObjects.length) {
+      await this.loadContractInstances(loaderNetworkObjects);
+    }
+  }
+
+  async pairContractsWithArtifacts(
+    contractIdObjects: IdObject<DataModel.Contract>[]
+  ): Promise<LoaderContractObject[]> {
+    // get full representation
+    const {
+      data: {
+        contracts
+      }
+    } = await this.db.query(FindContracts, {
+      ids: contractIdObjects.map(({ id }) => id)
+    });
+
+    // and resolve artifact
+    return contracts
+      .map((contract: DataModel.Contract) => {
+        const { name } = contract;
+
+        // @ts-ignore
+        const artifact = this.resolver.require(name);
+
+        return { contract, artifact };
+      });
   }
 
   async loadNetworks(

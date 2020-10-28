@@ -5,6 +5,7 @@ import { LoadedBytecodes, Load } from "@truffle/db/loaders/types";
 import { IdObject } from "@truffle/db/meta";
 import { CompiledContract } from "@truffle/compile-common";
 
+export { FindContracts } from "./find.graphql";
 import { AddContracts } from "./add.graphql";
 export { AddContracts };
 
