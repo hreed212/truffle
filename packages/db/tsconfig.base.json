@@ -4,7 +4,7 @@
     "declaration": true,
     "esModuleInterop": true,
     "lib": ["esnext", "dom"],
-    "target": "es6",
+    "target": "es2016",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "module": "commonjs",
