@@ -3,6 +3,7 @@
 
 declare namespace DataModel {
   type ResourceReferenceInput = any;
+  type Block = any;
   type Bytecode = any;
   type BytecodeInput = any;
   type BytecodesAddInput = any;
