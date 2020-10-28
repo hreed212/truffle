@@ -28,6 +28,12 @@ type LoaderNetworkObject = {
   loaderContractObject: LoaderContractObject;
 };
 
+type LoadableNetwork = {
+  name: string;
+  networkId: string;
+  networkObject: NetworkObject;
+}
+
 type LoaderContractObject = {
   contract: DataModel.Contract;
   artifact: ContractObject;
@@ -35,59 +41,70 @@ type LoaderContractObject = {
 
 export class ArtifactsLoader {
   private db: TruffleDB;
-  private config: Partial<Config>;
+  private compilationConfig: Partial<Config>;
   private resolver: Resolver;
 
   constructor(db: TruffleDB, config?: Partial<Config>) {
     this.db = db;
-    this.config = config;
+    this.compilationConfig = config;
     // @ts-ignore
     this.resolver = new TruffleResolver(config);
   }
 
   async load(): Promise<void> {
+    debug("Compiling...");
     const result: WorkflowCompileResult = await WorkflowCompile.compile(
-      this.config
+      this.compilationConfig
     );
+    debug("Compiled.");
 
+    debug("Initializing project...");
     const project = await Project.initialize({
       project: {
-        directory: this.config.working_directory
+        directory: this.compilationConfig.working_directory
       },
       db: this.db
     });
+    debug("Initialized project.");
 
-    // third parameter in loadCompilation is for whether or not we need
-    // to update nameRecords (i.e. is this happening in test)
-    const { contracts } = await project.loadCompilations({
-      result
+    debug("Loading compilations...");
+    const { contracts } = await project.loadCompilations({ result });
+    debug("Loaded compilations.");
+
+    debug("Assigning contract names...");
+    await project.loadNames({ assignments: { contracts } });
+    debug("Assigned contract names.");
+
+    const config = Config.detect({
+      working_directory: this.compilationConfig["contracts_directory"]
     });
 
-    await project.loadNames({ assignments: { contracts } });
-
-    const loaderContractObjects = await this.pairContractsWithArtifacts(contracts);
-
+    debug("Loading networks...");
     const loaderNetworkObjects = await this.loadNetworks(
-      loaderContractObjects,
-      this.config["contracts_directory"]
+      config,
+      await this.pairContractsWithArtifacts(contracts)
     );
+    debug("Loaded networks.");
 
     // assign names for networks we just added
     const networks = [
       ...new Set(loaderNetworkObjects.map(({ network: { id } }) => id))
     ].map(id => ({ id }));
 
+    debug("Assigning network names...");
     await project.loadNames({ assignments: { networks } });
+    debug("Assigned network names.");
 
-    if (loaderNetworkObjects.length) {
-      await this.loadContractInstances(loaderNetworkObjects);
-    }
+    debug("Loading contractInstances...");
+    await this.loadContractInstances(loaderNetworkObjects);
+    debug("Loaded contractInstances.");
   }
 
   async pairContractsWithArtifacts(
     contractIdObjects: IdObject<DataModel.Contract>[]
   ): Promise<LoaderContractObject[]> {
     // get full representation
+    debug("Retrieving contracts, ids: %o...", contractIdObjects.map(({ id }) => id));
     const {
       data: {
         contracts
@@ -95,110 +112,112 @@ export class ArtifactsLoader {
     } = await this.db.query(FindContracts, {
       ids: contractIdObjects.map(({ id }) => id)
     });
+    debug("Retrieved contracts, ids: %o.", contractIdObjects.map(({ id }) => id));
 
     // and resolve artifact
     return contracts
       .map((contract: DataModel.Contract) => {
         const { name } = contract;
 
+        debug("Requiring artifact for %s...", name);
         // @ts-ignore
         const artifact = this.resolver.require(name);
+        debug("Required artifact for %s.", name);
 
         return { contract, artifact };
       });
   }
 
   async loadNetworks(
-    loaderContractObjects: LoaderContractObject[],
-    workingDirectory: string
-  ): Promise<LoaderNetworkObject[]> {
-    const networksByContract = await Promise.all(loaderContractObjects.map(
-      loaderContractObject =>
-        this.loadNetworksForContract(loaderContractObject, workingDirectory)
-    ));
-    return networksByContract.flat();
-  }
-
-  async loadNetworksForContract(
-    loaderContractObject: LoaderContractObject,
-    workingDirectory: string,
-  ): Promise<LoaderNetworkObject[]> {
-    const { artifact, contract } = loaderContractObject;
-    const artifactsNetworks = artifact.networks;
-
-    // short circuit
-    if (Object.keys(artifactsNetworks).length === 0) {
-      return [];
-    }
-
-    const config = Config.detect({ working_directory: workingDirectory });
-
-    const configNetworks = [];
-    for (const networkName of Object.keys(config.networks)) {
-      const network = await this.loadNetworkForContractNetwork(
-        config,
-        networkName,
-        artifactsNetworks
-      );
-
-      if (network) {
-        configNetworks.push({
-          network,
-          loaderContractObject
-        });
-      }
-    }
-
-    return configNetworks;
-  }
-
-  async loadNetworkForContractNetwork(
     config: Config,
-    networkName: string,
-    artifactNetworks: {
-      [networkId: string]: NetworkObject;
+    loaderContractObjects: LoaderContractObject[]
+  ): Promise<LoaderNetworkObject[]> {
+    const loaderNetworkObjects = [];
+
+    for (const name of Object.keys(config.networks)) {
+      try {
+        debug("Connecting to network name: %s", name);
+        const { web3, networkId } = await this.connectNetwork(config, name);
+        debug("Connected to network name: %s, networkId: %s", name, networkId);
+
+        for (const { contract, artifact } of loaderContractObjects) {
+          if (!artifact.networks[networkId]) {
+            continue;
+          }
+
+          debug("Identifying historic network for contract name: %s...", contract.name);
+
+          const { transactionHash } = artifact.networks[networkId];
+
+          debug("Fetching transaction...");
+          const transactionBlock = await this.fetchTransactionBlock(
+            web3, transactionHash
+          );
+          debug("Fetched transaction.");
+          debug("Identified historic network for contract name: %s.", contract.name);
+
+          debug("Loading network name: %s...", name);
+          const network = await this.loadNetwork({
+            name,
+            networkId,
+            historicBlock: transactionBlock
+          });
+          debug("Loaded network name: %s.", name);
+
+          loaderNetworkObjects.push({
+            network,
+            loaderContractObject: { contract, artifact }
+          });
+        }
+      } catch (_) {
+        continue;
+      }
+
     }
-  ): Promise<DataModel.Network | undefined> {
-    config.network = networkName;
+
+    return loaderNetworkObjects;
+  }
+
+  async connectNetwork(
+    config: Config,
+    name: string
+  ): Promise<{
+    web3: Web3
+    networkId: DataModel.NetworkInput["networkId"]
+  }> {
+    config.network = name;
     await Environment.detect(config);
-    let networkId;
-    let web3;
-    try {
-      web3 = new Web3(config.provider);
-      networkId = await web3.eth.net.getId();
-    } catch (err) {
-      return;
-    }
 
-    const artifactNetwork: NetworkObject = artifactNetworks[networkId];
-    if (!artifactNetwork) {
-      return;
-    }
+    const web3: Web3 = new Web3(config.provider);
 
+    const networkId = await web3.eth.net.getId();
+
+    return { web3, networkId };
+  }
+
+  async fetchTransactionBlock(
+    web3: Web3,
+    transactionHash: string
+  ): Promise<DataModel.Block> {
     const {
-      transactionHash,
-      address,
-      links
-    } = artifactNetwork;
+      blockNumber: height,
+      blockHash: hash
+    } = await web3.eth.getTransaction(transactionHash);
 
-    const transaction = await web3.eth.getTransaction(transactionHash);
+    return { height, hash };
+  }
 
-    const historicBlock = {
-      height: transaction.blockNumber,
-      hash: transaction.blockHash
-    };
-
+  async loadNetwork(
+    networkInput: DataModel.NetworkInput
+  ): Promise<DataModel.Network> {
     const networksAdd = await this.db.query(AddNetworks, {
       networks: [
-        {
-          name: networkName,
-          networkId: networkId,
-          historicBlock: historicBlock
-        }
+        networkInput
       ]
     });
 
     return networksAdd.data.networksAdd.networks[0];
+
   }
 
   getNetworkLinks(bytecode: DataModel.Bytecode, links?: NetworkObject["links"]) {
