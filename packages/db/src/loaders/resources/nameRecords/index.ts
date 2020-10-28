@@ -22,6 +22,7 @@ function* getResourceName(
   const GetResourceName = forType(type);
 
   const result = yield {
+    type: "graphql",
     request: GetResourceName,
     variables: { id }
   };
@@ -57,6 +58,7 @@ export function* generateNameRecordsLoad(
   }
 
   const result = yield {
+    type: "graphql",
     request: AddNameRecords,
     variables: { nameRecords }
   };

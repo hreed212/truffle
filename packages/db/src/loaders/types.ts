@@ -37,12 +37,6 @@ export interface LoadedBytecodes {
   }[];
 }
 
-export interface LoadRequest<_N extends RequestName | string> {
-  request: string | graphql.DocumentNode; // GraphQL request
-  variables: {
-    [name: string]: any;
-  };
-}
 
 type Data<O, N extends string | keyof O> = string extends N
   ? Partial<O>
@@ -60,23 +54,78 @@ export type MutationData<N extends string | MutationName> = Data<
 >;
 
 export type RequestName = QueryName | MutationName;
-export type RequestData<N extends RequestName | string> = string extends N
-  ? Data<DataModel.Query & DataModel.Mutation, N>
-  : Data<DataModel.Query, N> | Data<DataModel.Mutation, N>;
+// export type RequestData<N extends RequestName | string> = string extends N
+//   ? Data<DataModel.Query & DataModel.Mutation, N>
+//   : Data<DataModel.Query, N> | Data<DataModel.Mutation, N>;
 
-export interface LoadResponse<N extends RequestName | string> {
-  data: RequestData<N>;
+type MethodName =
+  | "net_version"
+  | "eth_getTransaction";
+
+export interface GraphQlRequestType<
+  N extends QueryName | MutationName | string = string
+> {
+  graphql: N;
 }
+
+export interface Web3RequestType<
+  N extends MethodName | string = string
+>{
+  web3: MethodName | string;
+}
+
+export type RequestType =
+  | GraphQlRequestType
+  | Web3RequestType;
+
+export type RequestData<R extends RequestType> =
+  R extends { graphql: infer N }
+    ? N extends string
+      ? string extends N
+        ? Data<DataModel.Query & DataModel.Mutation, N>
+        : Data<DataModel.Query, N> | Data<DataModel.Mutation, N>
+      : never // shouldn't happen
+    : any;
+
+export interface GraphQlRequest {
+  type: "graphql";
+  request: string | graphql.DocumentNode; // GraphQL request
+  variables: {
+    [name: string]: any;
+  };
+}
+
+export interface Web3Request {
+  type: "web3";
+  method: string;
+  params: any[];
+}
+
+export type LoadRequest<R extends RequestType> =
+  R extends { graphql: string }
+    ? GraphQlRequest
+    : Web3Request;
+
+export type LoadResponse<R extends RequestType> =
+  R extends { graphql: string }
+    ? {
+        data: RequestData<R>;
+      }
+    : {
+        id: number;
+        jsonrpc: "2.0";
+        result: RequestData<R>;
+      };
 
 export type Load<
   T = any,
-  N extends RequestName | string = string
-> = string extends N
-  ? Generator<any, T, any> // HACK to get TS to play nice, sorry
-  : Generator<LoadRequest<N>, T, LoadResponse<N>>;
+  R extends RequestType | undefined = undefined
+> = R extends undefined
+  ? Generator<LoadRequest<R>, T, any> // HACK to get TS to play nice, sorry
+  : Generator<LoadRequest<R>, T, LoadResponse<R>>;
 
 export type Loader<
   A extends unknown[],
   T = any,
-  N extends RequestName | string = string
-> = (...args: A) => Load<T, N>;
+  R extends RequestType | undefined = undefined
+> = (...args: A) => Load<T, R>;

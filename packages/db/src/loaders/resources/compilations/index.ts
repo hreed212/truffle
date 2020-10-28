@@ -66,10 +66,11 @@ type LoadableCompilation = {
 
 export function* generateCompilationsLoad(
   loadableCompilations: LoadableCompilation[]
-): Load<DataModel.Compilation[], "compilationsAdd"> {
+): Load<DataModel.Compilation[], { graphql: "compilationsAdd" }> {
   const compilations = loadableCompilations.map(compilationInput);
 
   const result = yield {
+    type: "graphql",
     request: AddCompilations,
     variables: { compilations }
   };
@@ -79,8 +80,9 @@ export function* generateCompilationsLoad(
 
 export function* generateCompilationsContracts(
   compilations: IdObject<DataModel.Compilation>[]
-): Load<IdObject<DataModel.Contract>[], "compilations"> {
+): Load<IdObject<DataModel.Contract>[], { graphql: "compilations" }> {
   const result = yield {
+    type: "graphql",
     request: FindCompilationContracts,
     variables: {
       ids: compilations.map(({ id }) => id)
