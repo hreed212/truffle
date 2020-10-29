@@ -84,22 +84,30 @@ export class ArtifactsLoader {
     });
 
     debug("Loading networks...");
-    const loaderNetworkObjects = [];
+    const networks = [];
     for (const name of Object.keys(config.networks)) {
       try {
         debug("Connecting to network name: %s", name);
-        const { web3, networkId } = await this.connectNetwork(config, name);
-        debug("Connected to network name: %s, networkId: %s", name, networkId);
+        const { web3 } = await this.connectNetwork(config, name);
 
         const liveProject = await project.connect({
           provider: web3.currentProvider
         });
 
-        loaderNetworkObjects.push(...await this.loadNetworksForContracts(
-          liveProject,
-          { name, networkId },
-          loaderContractObjects
-        ));
+        const result = await liveProject.loadMigration({
+          network: {
+            name
+          },
+          contractArtifacts: loaderContractObjects.map(({
+            contract,
+            artifact
+          }) => ({
+            contract: toIdObject(contract),
+            artifact
+          }))
+        });
+
+        networks.push(...result.networks);
       } catch (error) {
         debug("error %o", error);
         continue;
@@ -107,31 +115,9 @@ export class ArtifactsLoader {
     }
     debug("Loaded networks.");
 
-    // assign names for networks we just added
-    const networks = [
-      ...new Set(loaderNetworkObjects.map(({ network: { id } }) => id))
-    ].map(id => ({ id }));
-
     debug("Assigning network names...");
     await project.loadNames({ assignments: { networks } });
     debug("Assigned network names.");
-
-    await project.loadContractInstances({
-      contractInstances: loaderNetworkObjects.map(({
-        network,
-        loaderContractObject: {
-          contract,
-          artifact
-        }
-      }) => ({
-        artifact,
-        contract: toIdObject(contract),
-        network: toIdObject(network) as IdObject<DataModel.Network>
-      }))
-    });
-    // debug("Loading contractInstances...");
-    // await this.loadContractInstances(loaderNetworkObjects);
-    // debug("Loaded contractInstances.");
   }
 
   async pairContractsWithArtifacts(
@@ -225,80 +211,5 @@ export class ArtifactsLoader {
     const networkId = await web3.eth.net.getId();
 
     return { web3, networkId };
-  }
-
-  getNetworkLinks(bytecode: DataModel.Bytecode, links?: NetworkObject["links"]) {
-    if (!links) {
-      return [];
-    }
-
-    return Object.entries(links).map(link => {
-      let linkReferenceIndexByName = bytecode.linkReferences.findIndex(
-        ({ name }) => name === link[0]
-      );
-
-      let linkValue = {
-        value: link[1],
-        linkReference: {
-          bytecode: { id: bytecode.id },
-          index: linkReferenceIndexByName
-        }
-      };
-
-      return linkValue;
-    });
-  }
-
-  async loadContractInstances(
-    loaderNetworkObjects: LoaderNetworkObject[]
-  ) {
-    const contractInstances = loaderNetworkObjects.map(loaderNetworkObject => {
-      const {
-        network,
-        loaderContractObject: {
-          contract,
-          artifact
-        }
-      } = loaderNetworkObject;
-
-      const {
-        address,
-        transactionHash,
-        links
-      } = artifact.networks[network.networkId];
-
-      let createBytecodeLinkValues = this.getNetworkLinks(
-        contract.createBytecode,
-        links
-      );
-      let callBytecodeLinkValues = this.getNetworkLinks(
-        contract.callBytecode,
-        links
-      );
-
-      let instance = {
-        address,
-        contract: toIdObject(contract),
-        network: toIdObject(network),
-        creation: {
-          transactionHash,
-          constructor: {
-            createBytecode: {
-              bytecode: toIdObject(contract.createBytecode),
-              linkValues: createBytecodeLinkValues
-            }
-          }
-        },
-        callBytecode: {
-          bytecode: toIdObject(contract.callBytecode),
-          linkValues: callBytecodeLinkValues
-        }
-      };
-      return instance;
-    });
-
-    await this.db.query(AddContractInstances, {
-      contractInstances
-    });
   }
 }

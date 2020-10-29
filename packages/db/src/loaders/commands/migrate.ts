@@ -7,26 +7,92 @@ import { toIdObject, IdObject } from "@truffle/db/meta";
 import { Load } from "@truffle/db/loaders/types";
 
 import { generateContractGet } from "@truffle/db/loaders/resources/contracts";
-import { generateNetworkGet } from "@truffle/db/loaders/resources/networks";
 import {
+  generateTranasctionNetworkLoad,
+  generateNetworkIdFetch,
+  generateNetworkGet
+} from "@truffle/db/loaders/resources/networks";
+import {
+  LoadableContractInstance,
   generateContractInstancesLoad
 } from "@truffle/db/loaders/resources/contractInstances";
 
 export interface GenerateMigrateLoadOptions {
-  contractInstances: {
-    artifact: ContractObject;
+  network: Pick<DataModel.Network, "name">;
+  contractArtifacts: {
     contract: IdObject<DataModel.Contract>;
-    network: IdObject<DataModel.Network>;
+    artifact: ContractObject;
   }[]
 }
 
 export function* generateMigrateLoad(
   options: GenerateMigrateLoadOptions
-): Load<{ contractInstances: DataModel.ContractInstance[] }> {
-  const loadableContractInstances = [];
-  for (const contractInstance of options.contractInstances) {
-    const { contract, network, artifact } = contractInstance;
+): Load<{
+  networks: IdObject<DataModel.Network>[],
+  contractInstances: IdObject<DataModel.ContractInstance>[]
+}> {
+  const networkId = yield* generateNetworkIdFetch();
 
+  const contractNetworks: ContractNetwork[] = [];
+
+  for (const { contract, artifact } of options.contractArtifacts) {
+    if (!artifact.networks[networkId]) {
+      // skip over artifacts that don't contain this network
+      continue;
+    }
+
+    const { transactionHash } = artifact.networks[networkId];
+
+    const network = yield* generateTranasctionNetworkLoad({
+      transactionHash,
+      network: {
+        name: options.network.name,
+        networkId
+      }
+    });
+
+    contractNetworks.push({
+      network: toIdObject(network),
+      contractArtifact: {
+        contract,
+        artifact
+      }
+    })
+  }
+
+  const loadableContractInstances = yield* processContractNetworks(
+    contractNetworks
+  );
+
+  const contractInstances = yield* generateContractInstancesLoad(
+    loadableContractInstances
+  );
+
+  return {
+    networks: contractNetworks.map(({ network }) => network),
+    contractInstances: contractInstances.map(toIdObject)
+  };
+}
+
+interface ContractNetwork {
+  network: IdObject<DataModel.Network>;
+  contractArtifact: {
+    contract: IdObject<DataModel.Contract>;
+    artifact: ContractObject;
+  }
+}
+
+function* processContractNetworks(
+  contractNetworks: ContractNetwork[]
+): Load<LoadableContractInstance[]> {
+  const loadableContractInstances = [];
+  for (const {
+    network,
+    contractArtifact: {
+      contract,
+      artifact
+    }
+  } of contractNetworks) {
     const {
       createBytecode,
       callBytecode
@@ -36,9 +102,7 @@ export function* generateMigrateLoad(
       networkId
     } = yield* generateNetworkGet(network);
 
-    debug("networkId %o", networkId);
     const networkObject = artifact.networks[networkId];
-    debug("networkObject %o", networkObject);
     if (!networkObject) {
       continue;
     }
@@ -60,10 +124,5 @@ export function* generateMigrateLoad(
     });
   }
 
-  debug("loadableContractInstances: %o", loadableContractInstances);
-  const contractInstances = yield* generateContractInstancesLoad(
-    loadableContractInstances
-  );
-
-  return { contractInstances };
+  return loadableContractInstances;
 }

@@ -15,11 +15,6 @@ import {
   generateMigrateLoad
 } from "./commands";
 
-import {
-  GenerateTransactionNetworkLoadOptions,
-  generateTranasctionNetworkLoad
-} from "./resources/networks";
-
 import {LoaderRunner, forDb} from "./run";
 
 interface ITruffleDB {
@@ -93,23 +88,6 @@ export class Project {
     };
   }
 
-  async loadContractInstances(options: {
-    contractInstances: {
-      artifact: ContractObject;
-      contract: IdObject<DataModel.Contract>;
-      network: IdObject<DataModel.Network>;
-    }[]
-  }): Promise<{
-    contractInstances: IdObject<DataModel.ContractInstance>[]
-  }> {
-    debug("contractInstances %o", options.contractInstances);
-    const { contractInstances } = await this.run(generateMigrateLoad, options);
-
-    return {
-      contractInstances: contractInstances.map(toIdObject)
-    };
-  }
-
   protected constructor(options: {
     project: IdObject<DataModel.Project>;
     run: LoaderRunner;
@@ -124,14 +102,21 @@ export class Project {
 }
 
 export class LiveProject extends Project {
-  async loadNetworkForTransaction(
-    options: GenerateTransactionNetworkLoadOptions
-  ): Promise<{
-    network: IdObject<DataModel.Network>
+  async loadMigration(options: {
+    network: Pick<DataModel.Network, "name">;
+    contractArtifacts: {
+      contract: IdObject<DataModel.Contract>;
+      artifact: ContractObject;
+    }[]
+  }): Promise<{
+    networks: IdObject<DataModel.Network>[],
+    contractInstances: IdObject<DataModel.ContractInstance>[]
   }> {
-    const network = await this.run(generateTranasctionNetworkLoad, options);
-    return {
-      network: toIdObject(network)
-    };
+    const {
+      networks,
+      contractInstances
+    } = await this.run(generateMigrateLoad, options);
+
+    return { networks, contractInstances };
   }
 }
