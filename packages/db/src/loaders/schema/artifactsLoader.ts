@@ -99,7 +99,7 @@ export class ArtifactsLoader {
           contractArtifacts
         });
 
-        networks.push(...result.networks);
+        networks.push(result.network);
       } catch (error) {
         debug("error %o", error);
         continue;

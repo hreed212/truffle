@@ -109,14 +109,14 @@ export class LiveProject extends Project {
       artifact: ContractObject;
     }[]
   }): Promise<{
-    networks: IdObject<DataModel.Network>[],
+    network: IdObject<DataModel.Network>,
     contractInstances: IdObject<DataModel.ContractInstance>[]
   }> {
     const {
-      networks,
+      network,
       contractInstances
     } = await this.run(generateMigrateLoad, options);
 
-    return { networks, contractInstances };
+    return { network, contractInstances };
   }
 }

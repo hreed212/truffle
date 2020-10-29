@@ -28,13 +28,13 @@ export interface GenerateMigrateLoadOptions {
 export function* generateMigrateLoad(
   options: GenerateMigrateLoadOptions
 ): Load<{
-  networks: IdObject<DataModel.Network>[],
+  network: IdObject<DataModel.Network>,
   contractInstances: IdObject<DataModel.ContractInstance>[]
 }> {
   const networkId = yield* generateNetworkIdFetch();
 
+  let latestNetwork: DataModel.Network | undefined;
   const contractNetworks: ContractNetwork[] = [];
-
   for (const { contract, artifact } of options.contractArtifacts) {
     if (!artifact.networks[networkId]) {
       // skip over artifacts that don't contain this network
@@ -50,6 +50,13 @@ export function* generateMigrateLoad(
         networkId
       }
     });
+
+    if (
+      latestNetwork &&
+      latestNetwork.historicBlock.height < network.historicBlock.height
+    ) {
+      latestNetwork = network;
+    }
 
     contractNetworks.push({
       network: toIdObject(network),
@@ -69,7 +76,7 @@ export function* generateMigrateLoad(
   );
 
   return {
-    networks: contractNetworks.map(({ network }) => network),
+    network: toIdObject(latestNetwork),
     contractInstances: contractInstances.map(toIdObject)
   };
 }
