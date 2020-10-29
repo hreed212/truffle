@@ -91,6 +91,7 @@ const run = async <
         const response: any = await promisify(provider.send)(payload);
 
         current = saga.next(response);
+        break;
       }
       default: {
         throw new Error(`Unknown request type ${loadRequest.type}`);

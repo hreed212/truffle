@@ -1,14 +1,24 @@
+import { logger } from "@truffle/db/logger";
+const debug = logger("db:loaders:project");
+
 import {DocumentNode} from "graphql";
 import type Web3 from "web3";
 import {WorkflowCompileResult} from "@truffle/compile-common";
+import {ContractObject} from "@truffle/contract-schema/spec";
 
 import {toIdObject, IdObject} from "@truffle/db/meta";
 
 import {
   generateCompileLoad,
   generateInitializeLoad,
-  generateNamesLoad
+  generateNamesLoad,
+  generateMigrateLoad
 } from "./commands";
+
+import {
+  GenerateTransactionNetworkLoadOptions,
+  generateTranasctionNetworkLoad
+} from "./resources/networks";
 
 import {LoaderRunner, forDb} from "./run";
 
@@ -83,6 +93,23 @@ export class Project {
     };
   }
 
+  async loadContractInstances(options: {
+    contractInstances: {
+      artifact: ContractObject;
+      contract: IdObject<DataModel.Contract>;
+      network: IdObject<DataModel.Network>;
+    }[]
+  }): Promise<{
+    contractInstances: IdObject<DataModel.ContractInstance>[]
+  }> {
+    debug("contractInstances %o", options.contractInstances);
+    const { contractInstances } = await this.run(generateMigrateLoad, options);
+
+    return {
+      contractInstances: contractInstances.map(toIdObject)
+    };
+  }
+
   protected constructor(options: {
     project: IdObject<DataModel.Project>;
     run: LoaderRunner;
@@ -97,5 +124,14 @@ export class Project {
 }
 
 export class LiveProject extends Project {
-
+  async loadNetworkForTransaction(
+    options: GenerateTransactionNetworkLoadOptions
+  ): Promise<{
+    network: IdObject<DataModel.Network>
+  }> {
+    const network = await this.run(generateTranasctionNetworkLoad, options);
+    return {
+      network: toIdObject(network)
+    };
+  }
 }

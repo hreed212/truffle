@@ -101,10 +101,12 @@ export interface Web3Request {
   params?: any[];
 }
 
-export type LoadRequest<R extends RequestType> =
-  R extends { graphql: string }
+export type LoadRequest<R extends RequestType | undefined> =
+  "graphql" extends keyof R
     ? GraphQlRequest
-    : Web3Request;
+    : "web3" extends keyof R
+      ? Web3Request
+      : GraphQlRequest | Web3Request;
 
 export type LoadResponse<R extends RequestType> =
   R extends { graphql: string }
@@ -116,6 +118,8 @@ export type LoadResponse<R extends RequestType> =
         jsonrpc: "2.0";
         result: RequestData<R>;
       };
+
+type R = LoadRequest<undefined>
 
 export type Load<
   T = any,
