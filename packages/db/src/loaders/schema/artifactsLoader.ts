@@ -35,7 +35,7 @@ type LoadableNetwork = {
 }
 
 type LoaderContractObject = {
-  contract: DataModel.Contract;
+  contract: IdObject<DataModel.Contract>;
   artifact: ContractObject;
 }
 
@@ -75,7 +75,7 @@ export class ArtifactsLoader {
     await project.loadNames({ assignments: { contracts } });
     debug("Assigned contract names.");
 
-    const loaderContractObjects = await this.pairContractsWithArtifacts(
+    const contractArtifacts = await this.pairContractsWithArtifacts(
       contracts
     );
 
@@ -95,16 +95,8 @@ export class ArtifactsLoader {
         });
 
         const result = await liveProject.loadMigration({
-          network: {
-            name
-          },
-          contractArtifacts: loaderContractObjects.map(({
-            contract,
-            artifact
-          }) => ({
-            contract: toIdObject(contract),
-            artifact
-          }))
+          network: { name },
+          contractArtifacts
         });
 
         networks.push(...result.networks);
@@ -144,56 +136,11 @@ export class ArtifactsLoader {
         const artifact = this.resolver.require(name);
         debug("Required artifact for %s.", name);
 
-        return { contract, artifact };
+        return {
+          contract: toIdObject(contract),
+          artifact
+        };
       });
-  }
-
-  async loadNetworksForContracts(
-    project: LiveProject,
-    network: Pick<DataModel.NetworkInput, "name" | "networkId">,
-    loaderContractObjects: LoaderContractObject[]
-  ): Promise<LoaderNetworkObject[]> {
-    const { name, networkId } = network;
-
-    const loaderNetworkObjects = [];
-
-    for (const { contract, artifact } of loaderContractObjects) {
-      if (!artifact.networks[networkId]) {
-        continue;
-      }
-
-      debug("Identifying historic network for contract name: %s...", contract.name);
-
-      const { transactionHash } = artifact.networks[networkId];
-
-      debug(
-        "Loading network name: %s for transactionHash: %s...",
-        name,
-        transactionHash
-      );
-      const { network } = await project.loadNetworkForTransaction({
-        transactionHash,
-        network: {
-          name,
-          networkId
-        }
-      });
-      debug(
-        "Loading network name: %s for transactionHash: %s...",
-        name,
-        transactionHash
-      );
-
-      loaderNetworkObjects.push({
-        network: {
-          id: network.id,
-          networkId
-        },
-        loaderContractObject: { contract, artifact }
-      });
-    }
-
-    return loaderNetworkObjects;
   }
 
   async connectNetwork(
@@ -201,15 +148,12 @@ export class ArtifactsLoader {
     name: string
   ): Promise<{
     web3: Web3
-    networkId: DataModel.NetworkInput["networkId"]
   }> {
     config.network = name;
     await Environment.detect(config);
 
     const web3: Web3 = new Web3(config.provider);
 
-    const networkId = await web3.eth.net.getId();
-
-    return { web3, networkId };
+    return { web3 };
   }
 }

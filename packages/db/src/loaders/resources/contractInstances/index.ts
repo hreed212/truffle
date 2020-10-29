@@ -56,10 +56,6 @@ export function* generateContractInstancesLoad(
     variables: { contractInstances }
   };
 
-  debug("contractInstances %O", contractInstances);
-
-  debug("result %o", result);
-
   return result.data.contractInstancesAdd.contractInstances;
 }
 
